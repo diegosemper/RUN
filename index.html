@@ -980,7 +980,7 @@ html, body {
         <button class="knop knop-stil" id="knopInstellingen">Settings</button>
       </div>
       <p class="beurs">You have <b id="beursMenu">0</b> coins</p>
-      <p class="versie" id="versie">versie van 29 augustus 2026, 00:04</p>
+      <p class="versie" id="versie">versie van 29 augustus 2026, 00:13</p>
     </div>
   </div>
 
@@ -5448,14 +5448,68 @@ function leegSpelerdossier() {
     cat: cat,
     totaalVerdiend: 0,
     straatRecord: 0,             // verste in de eindeloze modus
+    startpakket: 0,              // welk startpakket al is uitgedeeld
   };
+}
+
+
+/* ============================================================
+   Het startpakket
+
+   Dit spel heeft één speler, en die was zijn voortgang kwijt toen
+   het naar een eigen webadres verhuisde: de browser bewaart je
+   opslag per adres, dus op een nieuw adres begin je in een lege
+   kast. Vandaar dat je hier niet op nul begint maar op de plek waar
+   je gebleven was.
+
+   `STARTPAKKET` is het nummer ervan. Staat dat nummer nog niet in
+   je opslag, dan wordt het pakket eenmalig uitgedeeld -- ook als je
+   al een tijdje aan het spelen bent. Wil je het later nog eens
+   uitdelen (of iets anders weggeven), zet het nummer dan een hoger.
+
+   Uitdelen gaat altijd optellend: wie al meer geld of meer levels
+   heeft, raakt daar niets van kwijt.
+   ============================================================ */
+
+const STARTPAKKET = 1;
+
+const STARTPAKKETTEN = {
+  1: {
+    geld: 500000,
+    // Te voet helemaal uit (anders gaat de fiets niet open), en op de
+    // fiets de eerste twee werelden, zodat de derde openstaat.
+    gehaald: { lopen: 'alles', fiets: 20 },
+    beginBij: 'fiets',
+  },
+};
+
+function deelStartpakketUit(d) {
+  const pakket = STARTPAKKETTEN[STARTPAKKET];
+  if (!pakket || (d.startpakket || 0) >= STARTPAKKET) return d;
+
+  d.geld = Math.max(d.geld || 0, pakket.geld);
+  d.totaalVerdiend = Math.max(d.totaalVerdiend || 0, pakket.geld);
+
+  CATEGORIEEN.forEach((c) => {
+    const hoeveel = pakket.gehaald[c.sleutel];
+    if (hoeveel === undefined) return;
+    const tot = hoeveel === 'alles' ? c.levels.length : hoeveel;
+    const voortgang = d.cat[c.sleutel];
+    for (let i = 0; i < tot && i < voortgang.gehaald.length; i++) {
+      voortgang.gehaald[i] = true;
+    }
+  });
+
+  if (pakket.beginBij && d.cat[pakket.beginBij]) d.categorie = pakket.beginBij;
+  d.startpakket = STARTPAKKET;
+  return d;
 }
 
 function leesDossier() {
   const leeg = leegSpelerdossier();
   try {
     const rauw = localStorage.getItem(OPSLAG_SLEUTEL);
-    if (!rauw) return leeg;
+    if (!rauw) return deelStartpakketUit(leeg);
     const data = JSON.parse(rauw);
 
     // Voorzichtig samenvoegen: zijn er later levels of upgrades
@@ -5464,6 +5518,7 @@ function leesDossier() {
     uit.geld = Number(data.geld) || 0;
     uit.totaalVerdiend = Number(data.totaalVerdiend) || 0;
     uit.straatRecord = Number(data.straatRecord) || 0;
+    uit.startpakket = Number(data.startpakket) || 0;
     if (data.categorie && uit.cat[data.categorie]) uit.categorie = data.categorie;
 
     CATEGORIEEN.forEach((c) => {
@@ -5489,9 +5544,9 @@ function leesDossier() {
         doel.verste = c.levels.map((_, i) => Number(bron.verste[i]) || 0);
       }
     });
-    return uit;
+    return deelStartpakketUit(uit);
   } catch (e) {
-    return leeg;
+    return deelStartpakketUit(leeg);
   }
 }
 
@@ -5504,6 +5559,10 @@ function bewaarDossier() {
 }
 
 let dossier = leesDossier();
+
+// Het startpakket meteen vastleggen, zodat het na een herstart niet
+// opnieuw wordt uitgedeeld en je voortgang gewoon doorloopt.
+bewaarDossier();
 
 
 /* ============================================================
